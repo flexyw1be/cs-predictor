@@ -1,42 +1,52 @@
 import pandas as pd
-from config import DROP_COLS, TARGET_COL
+import numpy as np
+from collections import defaultdict, deque
 
 
-def feature_engineering(df):
-    df['winrate_diff'] = df['map_winrate_A'] - df['map_winrate_B']
-    df['abs_winrate_diff'] = abs(df['map_winrate_A'] - df['map_winrate_B'])
+def compute_advanced_features(df):
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.sort_values('date').reset_index(drop=True)
 
-    df['form_diff'] = df['recent_form_A'] - df['recent_form_B']
-    df['abs_form_diff'] = abs(df['recent_form_A'] - df['recent_form_B'])
+    K = 20
+    init_elo = 1500
+    team_elo = defaultdict(lambda: init_elo)
+    team_map_elo = defaultdict(lambda: defaultdict(lambda: init_elo))
+    h2h_stats = defaultdict(lambda: {'wins_A': 0, 'total': 0})
+    team_map_history = defaultdict(lambda: defaultdict(lambda: deque(maxlen=5)))
 
-    df['A_power_index'] = df['recent_form_A'] / (df['team_A_rank'] + 1)
-    df['B_power_index'] = df['recent_form_B'] / (df['team_B_rank'] + 1)
+    elo_diffs, map_elo_diffs, h2h_rates, momentum_diffs = [], [], [], []
 
-    df['power_diff'] = df['A_power_index'] - df['B_power_index']
-    df['abs_power_diff'] = abs(df['A_power_index'] - df['B_power_index'])
-    cols_to_drop = [
-        'A_power_index', 'B_power_index',
-        'team_A_rank', 'team_B_rank',
-        'avg_rating_A', 'avg_rating_B',
-        'winrate_A', 'winrate_B',
-        'recent_form_A', 'recent_form_B',
-        'map'
-    ]
+    for _, row in df.iterrows():
+        a, b, m = row['team_A'], row['team_B'], row['map']
 
-    # Удаляем только если они есть в датафрейме
-    existing_drops = [c for c in cols_to_drop if c in df.columns]
-    df = df.drop(columns=existing_drops)
-    if 'rating_diff' not in df.columns and 'avg_rating_A' in df.columns:
-        df['rating_diff'] = df['avg_rating_A'] - df['avg_rating_B']
+        # Запись текущих показателей
+        elo_diffs.append(team_elo[a] - team_elo[b])
+        map_elo_diffs.append(team_map_elo[a][m] - team_map_elo[b][m])
 
-    print(f"--- Оптимизация признаков: удалено {len(existing_drops)} колонок ---")
-    print(f"Оставшиеся признаки: {list(df.columns)}")
+        h2h = h2h_stats[tuple(sorted((a, b)))]
+        rate = h2h['wins_A'] / h2h['total'] if h2h['total'] > 0 else 0.5
+        h2h_rates.append(rate if a < b else 1 - rate)
 
-    y = df[TARGET_COL]
+        m_a = np.mean(team_map_history[a][m]) if team_map_history[a][m] else 0.5
+        m_b = np.mean(team_map_history[b][m]) if team_map_history[b][m] else 0.5
+        momentum_diffs.append(m_a - m_b)
 
-    X = df.drop(columns=[TARGET_COL] + DROP_COLS, errors='ignore')
+        # Обновление после матча
+        win_a = 1 if row['winner'] == a else 0
+        p_a = 1.0 / (1.0 + 10 ** ((team_elo[b] - team_elo[a]) / 400))
+        team_elo[a] += K * (win_a - p_a)
+        team_elo[b] += K * ((1 - win_a) - (1 - p_a))
 
-    X = X.fillna(0)
+        h_key = tuple(sorted((a, b)))
+        h2h_stats[h_key]['total'] += 1
+        if (win_a and a < b) or (not win_a and b < a):
+            h2h_stats[h_key]['wins_A'] += 1
 
-    print(f"Features engineered. Features count: {X.shape[1]}")
-    return X, y
+        team_map_history[a][m].append(win_a)
+        team_map_history[b][m].append(1 - win_a)
+
+    df['elo_diff'] = elo_diffs
+    df['map_elo_diff'] = map_elo_diffs
+    df['h2h_rate'] = h2h_rates
+    df['momentum_diff'] = momentum_diffs
+    return df
