@@ -18,10 +18,10 @@ def run_genetic_optimization(X_train, y_train):
     # Пространство поиска (Гены)
     # GA будет "мутировать" эти значения, чтобы найти лучшие
     param_grid = {
-        'n_estimators': Integer(50, 500),  # Кол-во деревьев
-        'max_depth': Integer(3, 30),  # Глубина дерева
-        'min_samples_split': Integer(2, 20),  # Минимум примеров для разделения
-        'min_samples_leaf': Integer(1, 10),  # Минимум примеров в листе
+        'n_estimators': Integer(100, 200),  # Кол-во деревьев
+        'max_depth': Integer(3, 5),  # Глубина дерева
+        'min_samples_split': Integer(2, 30),  # Минимум примеров для разделения
+        'min_samples_leaf': Integer(10, 20),  # Минимум примеров в листе
         'criterion': Categorical(['gini', 'entropy']),
         'max_features': Categorical(['sqrt', 'log2'])
     }
@@ -33,7 +33,7 @@ def run_genetic_optimization(X_train, y_train):
     # Настройка эволюции
     evolved_estimator = GASearchCV(
         estimator=clf,
-        cv=cv_split,
+        cv=5,
         scoring='accuracy',  # Или 'roc_auc'
         param_grid=param_grid,
         population_size=GA_PARAMS['population_size'],

@@ -11,6 +11,7 @@ import seaborn as sns
 from sklearn.metrics import confusion_matrix, classification_report, roc_auc_score
 import numpy as np
 import matplotlib
+
 matplotlib.use('TkAgg')  # Принудительный запуск в отдельном окне
 import matplotlib.pyplot as plt
 
@@ -42,6 +43,8 @@ def calculate_extra_metrics(model, X_test, y_test):
         print("Результат: Модель хорошо откалибрована (уверенность совпадает с реальностью).")
     else:
         print("Результат: Высокий Loss. Модель часто ошибается в моментах, когда она уверена.")
+
+
 def calibrate_and_save_model(best_rf_model, X_train, y_train, X_test, y_test):
     print("\n--- Запуск калибровки модели ---")
 
@@ -50,8 +53,8 @@ def calibrate_and_save_model(best_rf_model, X_train, y_train, X_test, y_test):
     # Если ошибка повторяется, попробуй обернуть в конструктор:
     calibrated_model = CalibratedClassifierCV(
         estimator=best_rf_model,
-        cv='prefit',
-        method='sigmoid'
+        cv=5,
+        method='isotonic'
     )
 
     # ВАЖНО: При cv='prefit' метод .fit() все равно нужно вызвать,
@@ -59,6 +62,7 @@ def calibrate_and_save_model(best_rf_model, X_train, y_train, X_test, y_test):
     calibrated_model.fit(X_test, y_test)
 
     return calibrated_model
+
 
 def run_model_diagnostic(model, X_test, y_test, features):
     print("\n" + "=" * 30)
@@ -103,6 +107,7 @@ def run_model_diagnostic(model, X_test, y_test, features):
 
     print("--- Диагностика завершена. Графики отображены. ---")
 
+
 def save_final_dataset(X_train, X_test, y_train, y_test, filename="final_processed_dataset.csv"):
     print(f"--- Сохранение обработанного датасета в {filename} ---")
 
@@ -119,6 +124,7 @@ def save_final_dataset(X_train, X_test, y_train, y_test, filename="final_process
     # 4. Сохраняем в CSV
     final_df.to_csv(filename, index=False)
     print(f"Успешно! Сохранено {len(final_df)} строк и {len(final_df.columns)} колонок.")
+
 
 def finalize_model(X_train, y_train, X_test, y_test, best_params):
     print("--- Запуск финального обучения ---")
@@ -185,6 +191,14 @@ def main():
     calibrated_rf = calibrate_and_save_model(best_rf_model, X_train, y_train, X_test, y_test)
     joblib.dump(calibrated_rf, 'cs2_predictor_model_calibrated.joblib')
     calculate_extra_metrics(best_rf_model, X_test, y_test)
+    train_acc = best_rf_model.score(X_train, y_train)
+    test_acc = best_rf_model.score(X_test, y_test)
+    print(f"Точность на тренировке: {train_acc:.2f}")
+    print(f"Точность на тесте: {test_acc:.2f}")
+    importances = best_rf_model.feature_importances_
+    feature_names = X_train.columns
+    top_5 = sorted(zip(importances, feature_names), reverse=True)[:5]
+    print("Топ-5 признаков, на которых учится модель:", top_5)
 
 
 import matplotlib.pyplot as plt
@@ -208,5 +222,7 @@ def check_learning_quality(model, X_test, y_test):
     # 3. Выводим важность признаков
     importances = model.feature_importances_
     # (Здесь код для отрисовки столбчатой диаграммы признаков)
+
+
 if __name__ == "__main__":
     main()
