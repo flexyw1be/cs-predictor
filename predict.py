@@ -18,7 +18,7 @@ def get_prediction(match_data, confidence_threshold=0.5):
     # Загрузка модели
     try:
         model = CatBoostClassifier()
-        model.load_model('models/catboost_model.cbm')
+        model.load_model('models/rf_genetic.pkl')
         feature_cols = joblib.load('models/feature_cols.pkl')
     except:
         # Fallback на старую модель
