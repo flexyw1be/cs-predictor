@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import os
 import joblib
+import argparse
 import matplotlib
 matplotlib.use('Agg')  # Используем бэкенд без GUI
 import matplotlib.pyplot as plt
@@ -18,87 +19,93 @@ from sklearn.metrics import (
 )
 from catboost import CatBoostClassifier
 
-# Импорт Байесовского оптимизатора
-from skopt import BayesSearchCV
-from skopt.space import Real, Categorical, Integer
+from config import get_feature_cols
 
 
-def train_model():
+def train_model(use_kaggle=False):
+    """
+    Обучение модели.
+    
+    Параметры:
+    ----------
+    use_kaggle : bool
+        Использовать Kaggle датасет (45K+ матчей) вместо основного
+    """
     # --- 1. ЗАГРУЗКА ДАННЫХ ---
-    train_path, val_path, test_path = 'data/processed/train.csv', 'data/processed/val.csv', 'data/processed/test.csv'
+    if use_kaggle:
+        data_dir = 'data/processed_kaggle'
+        dataset_type = 'kaggle'
+        print("="*60)
+        print("🎮 ТРЕНИРОВКА НА KAGGLE ДАТАСЕТЕ (45K+ матчей)")
+        print("="*60)
+    else:
+        data_dir = 'data/processed'
+        dataset_type = 'main'
+        print("="*60)
+        print("🎮 ТРЕНИРОВКА НА ОСНОВНОМ ДАТАСЕТЕ")
+        print("="*60)
+    
+    train_path = f'{data_dir}/train.csv'
+    val_path = f'{data_dir}/val.csv'
+    test_path = f'{data_dir}/test.csv'
+    
     if not os.path.exists(train_path):
-        print("Ошибка: Сначала запусти data_processor.py")
+        if use_kaggle:
+            print("Ошибка: Сначала запусти process_kaggle.py")
+        else:
+            print("Ошибка: Сначала запусти data_processor.py")
         return
 
-    df_train, df_val, df_test = pd.read_csv(train_path), pd.read_csv(val_path), pd.read_csv(test_path)
+    df_train = pd.read_csv(train_path)
+    df_val = pd.read_csv(val_path)
+    df_test = pd.read_csv(test_path)
+    
+    print(f"\n📊 Размеры данных:")
+    print(f"   Train: {len(df_train)}, Val: {len(df_val)}, Test: {len(df_test)}")
 
-    # Новый расширенный набор признаков
-    feature_cols = [
-        'map',  # категориальный
-        # Ранговые признаки
-        'rank_diff', 'abs_rank_diff',
-        # Контекст карты
-        'picked_by_is_A', 'is_decider',
-        # Исходные статистики
-        'map_winrate_A', 'map_winrate_B',
-        'recent_form_A', 'recent_form_B',
-        # Elo-based признаки
-        'elo_diff', 'map_elo_diff',
-        # H2H
-        'h2h_rate', 'h2h_games',
-        # Momentum
-        'momentum_diff',
-        # Streak
-        'streak_A', 'streak_B',
-        # Время с последнего матча
-        'days_since_last_A', 'days_since_last_B',
-        # Скользящие статистики
-        'overall_winrate_A', 'overall_winrate_B', 'winrate_diff',
-        # Сила соперников
-        'opponent_strength_A', 'opponent_strength_B',
-        # Опыт на карте
-        'map_games_A', 'map_games_B', 'map_experience_diff',
-    ]
+    # Получаем признаки из config
+    all_features = get_feature_cols(dataset_type)
+    
+    # Фильтруем только доступные в данных
+    feature_cols = [c for c in all_features if c in df_train.columns]
+    
+    print(f"\n📋 Используется {len(feature_cols)} признаков из {len(all_features)}")
     
     target = 'winner_is_A'
 
-    # Проверим наличие всех колонок
-    missing_cols = [c for c in feature_cols if c not in df_train.columns]
-    if missing_cols:
-        print(f"ВНИМАНИЕ: Отсутствуют колонки {missing_cols}. Перезапусти data_processor.py!")
-        # Используем только доступные колонки
-        feature_cols = [c for c in feature_cols if c in df_train.columns]
-
-    X_train, y_train = df_train[feature_cols], df_train[target]
-    X_val, y_val = df_val[feature_cols], df_val[target]
-    X_test, y_test = df_test[feature_cols], df_test[target]
+    X_train, y_train = df_train[feature_cols].fillna(0), df_train[target]
+    X_val, y_val = df_val[feature_cols].fillna(0), df_val[target]
+    X_test, y_test = df_test[feature_cols].fillna(0), df_test[target]
     
     # Объединяем train + val для обучения
     X_train_full = pd.concat([X_train, X_val], ignore_index=True)
     y_train_full = pd.concat([y_train, y_val], ignore_index=True)
     
-    groups_train = df_train['match_id']
+    groups_train = df_train['match_id'] if 'match_id' in df_train.columns else None
 
     # --- 2. CATBOOST (лучше работает с категориями и небольшими данными) ---
-    print("="*60)
-    print("Обучение CatBoost с оптимизацией...")
+    print("\n" + "="*60)
+    print("Обучение CatBoost (параметры из GA оптимизации)...")
     print("="*60)
     
-    cat_features = ['map']
+    # Категориальные признаки
+    cat_features = [c for c in ['map'] if c in feature_cols]
     
     # CatBoost с оптимизированными параметрами
     cb_model = CatBoostClassifier(
-        iterations=1000,
-        depth=6,
-        learning_rate=0.05,
-        l2_leaf_reg=5,
-        random_seed=85,
+        iterations=884,
+        depth=5,
+        learning_rate=0.036,
+        l2_leaf_reg=1.0,
+        bagging_temperature=0.11,
+        random_strength=0.21,
+        random_seed=42,
         early_stopping_rounds=50,
         verbose=100,
         eval_metric='AUC',
         use_best_model=True,
     )
-    
+        
     cb_model.fit(
         X_train, y_train,
         eval_set=(X_val, y_val),
@@ -117,23 +124,33 @@ def train_model():
 
     # --- 3. RANDOM FOREST ДЛЯ СРАВНЕНИЯ ---
     print("\n" + "="*60)
-    print("Обучение RandomForest для сравнения...")
+    print("Обучение RandomForest (параметры из GA оптимизации)...")
     print("="*60)
     
     # Препроцессинг для RF
-    preprocessor = ColumnTransformer([
-        ('num', StandardScaler(), [c for c in feature_cols if c != 'map']),
-        ('cat', OneHotEncoder(drop='first', handle_unknown='ignore'), ['map'])
-    ])
+    num_features = [c for c in feature_cols if c not in ['map']]
+    
+    if cat_features:
+        preprocessor = ColumnTransformer([
+            ('num', StandardScaler(), num_features),
+            ('cat', OneHotEncoder(drop='first', handle_unknown='ignore'), cat_features)
+        ])
+    else:
+        # Для Kaggle датасета (без категорий)
+        preprocessor = StandardScaler()
+    
     X_train_proc = preprocessor.fit_transform(X_train_full)
     X_test_proc = preprocessor.transform(X_test)
 
+    # RandomForest с параметрами из GA оптимизации
     rf_model = RandomForestClassifier(
-        n_estimators=500,
-        max_depth=12,
-        min_samples_leaf=3,
+        n_estimators=379,
+        max_depth=18,
+        min_samples_leaf=4,
+        min_samples_split=11,
         max_features='sqrt',
-        random_state=85,
+        class_weight='balanced',
+        random_state=42,
         n_jobs=-1
     )
     rf_model.fit(X_train_proc, y_train_full)
@@ -234,4 +251,9 @@ def train_model():
 
 
 if __name__ == "__main__":
-    train_model()
+    parser = argparse.ArgumentParser(description='Обучение модели для предсказания CS')
+    parser.add_argument('--kaggle', action='store_true', 
+                        help='Использовать Kaggle датасет (45K+ матчей)')
+    args = parser.parse_args()
+    
+    train_model(use_kaggle=args.kaggle)

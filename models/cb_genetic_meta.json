@@ -1,0 +1,41 @@
+{
+  "feature_cols": [
+    "map",
+    "picked_by_is_A",
+    "is_decider",
+    "rank_diff",
+    "abs_rank_diff",
+    "map_winrate_A",
+    "map_winrate_B",
+    "recent_form_A",
+    "recent_form_B",
+    "elo_diff",
+    "map_elo_diff",
+    "h2h_rate",
+    "h2h_games",
+    "momentum_diff",
+    "streak_A",
+    "streak_B",
+    "days_since_last_A",
+    "days_since_last_B",
+    "overall_winrate_A",
+    "overall_winrate_B",
+    "winrate_diff",
+    "opponent_strength_A",
+    "opponent_strength_B",
+    "map_games_A",
+    "map_games_B",
+    "map_experience_diff"
+  ],
+  "best_params": {
+    "depth": 5,
+    "learning_rate": 0.03574712922600244,
+    "iterations": 884,
+    "l2_leaf_reg": 1.0,
+    "bagging_temperature": 0.1105917693163373,
+    "random_strength": 0.2110831396335287
+  },
+  "test_accuracy": 0.6115702479338843,
+  "test_auc": 0.6432613325220566,
+  "cv_score": 0.6095656417764763
+}

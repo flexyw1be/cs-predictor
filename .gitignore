@@ -6,3 +6,8 @@ economy.csv
 picks.csv
 players.csv
 results.csv
+# Large model files
+models/*.pkl
+models/*.cbm
+catboost_info/
+*.zip
